@@ -21,7 +21,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         stream: false
       })
     });
-
+    
     const data = await response.json();
     
     // Convert to OpenAI format
@@ -44,4 +44,6 @@ app.post('/v1/chat/completions', async (req, res) => {
   }
 });
 
-app.listen(process.env.PORT || 3000);
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
