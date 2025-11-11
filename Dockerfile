@@ -1,49 +1,15 @@
-# Use official Node.js runtime as base image
-FROM node:18-alpine
+FROM feelingsurf/viewer:stable
 
-# Install dependencies for Puppeteer
-RUN apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    freetype-dev \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    font-noto-emoji
+# Set your access token
+ENV access_token="d6e659ba6b59c9866fba8ff01bc56e04"
 
-# Set Puppeteer to use installed Chromium
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl
 
-# Create app directory
-WORKDIR /app
+# Create health check script
+RUN echo '#!/bin/bash\n\necho "Starting FeelingSurf with health checks..."\n\n# Start FeelingSurf in background\n./run.sh &\n\n# Health check loop - keeps container alive\nwhile true; do\n    # Check if FeelingSurf is responding\n    if curl -f http://localhost:3000 >/dev/null 2>&1; then\n        echo "✅ FeelingSurf is healthy"\n    else\n        echo "❌ FeelingSurf health check failed, but keeping container alive"\n    fi\n    \n    # Also prevent sleep by writing to stdout\n    echo "🕒 Heartbeat: $(date)"\n    \n    # Wait before next check\n    sleep 30\ndone' > /start.sh
 
-# Copy package files
-COPY package*.json ./
+RUN chmod +x /start.sh
 
-# Install app dependencies
-RUN npm install --production
-
-# Copy app source
-COPY . .
-
-# Create non-root user for security
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nextjs -u 1001
-
-# Change ownership of the app directory
-RUN chown -R nextjs:nodejs /app
-
-# Switch to non-root user
-USER nextjs
-
-# Expose port
-EXPOSE 3000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node health-check.js
-
-# Start the application
-CMD ["npm", "start"]
+# Use the health check script
+CMD ["/start.sh"]
