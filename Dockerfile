@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     libdrm2 \
     libgbm1 \
     libasound2 \
+    dbus-x11 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -56,53 +57,86 @@ RUN echo '<!DOCTYPE html>\n\
             <p><strong>User:</strong> alllogin</p>\n\
             <p><strong>Mode:</strong> Headless Browser</p>\n\
             <p><strong>Version:</strong> 2.5.0</p>\n\
+            <p><strong>Port:</strong> 8000</p>\n\
             <p style="margin-top: 30px; color: #888; font-size: 14px;">This viewer runs in the background and automatically visits websites. Check the logs below for activity details.</p>\n\
         </div>\n\
     </div>\n\
 </body>\n\
 </html>' > /app/status.html
 
-# Create startup script
+# Create startup script with memory optimizations
 RUN echo '#!/bin/bash\n\
 echo "Starting FeelingSurf Viewer..."\n\
 \n\
-# Get current Hugging Face IP address\n\
-echo "=== Current Hugging Face Space Information ==="\n\
+# Set virtual memory limits to prevent OOM\n\
+echo "=== Setting up virtual memory and environment ==="\n\
+sysctl -w vm.overcommit_memory=1 2>/dev/null || true\n\
+sysctl -w vm.drop_caches=1 2>/dev/null || true\n\
+\n\
+# Get current IP address\n\
 CURRENT_IP=$(curl -s -H "Accept: application/json" https://api.ipify.org?format=json | grep -oE "[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}")\n\
 if [ -n "$CURRENT_IP" ]; then\n\
     echo "🌐 Current Public IP: $CURRENT_IP"\n\
-    echo "📍 Hugging Face Space IP: $CURRENT_IP"\n\
+    echo "📍 Space IP: $CURRENT_IP"\n\
 else\n\
     echo "⚠️  Could not determine current IP address"\n\
 fi\n\
-echo "============================================="\n\
-echo ""\n\
 \n\
-# Start Xvfb (virtual display)\n\
-Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &\n\
+# Start D-Bus for system services\n\
+echo "Starting D-Bus..."\n\
+mkdir -p /var/run/dbus\n\
+dbus-uuidgen --ensure\n\
+dbus-daemon --system --fork\n\
+\n\
+# Start Xvfb (virtual display) with larger memory allocation\n\
+echo "Starting virtual display..."\n\
+Xvfb :99 -screen 0 1024x768x16 -ac +extension GLX +render -noreset > /dev/null 2>&1 &\n\
 export DISPLAY=:99\n\
 \n\
 # Wait for Xvfb to start\n\
-sleep 2\n\
+sleep 3\n\
 \n\
-# Start FeelingSurf in background\n\
+# Set Chrome/Chromium flags to reduce memory usage\n\
+export FEELINGSURF_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --disable-extensions --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --memory-pressure-off --max-old-space-size=512"\n\
+\n\
+# Start FeelingSurf with memory optimizations\n\
+echo "Starting FeelingSurf Viewer..."\n\
 cd /app\n\
-./FeelingSurfViewer --access-token d6e659ba6b59c9866fba8ff01bc56e04 --no-sandbox 2>&1 | tee /tmp/viewer.log &\n\
+\n\
+# Run viewer with timeout and restart on failure\n\
+while true; do\n\
+    echo "$(date): Starting FeelingSurf session..." >> /tmp/viewer-sessions.log\n\
+    timeout 3600 ./FeelingSurfViewer --access-token d6e659ba6b59c9866fba8ff01bc56e04 --no-sandbox --disable-dev-shm-usage --disable-gpu --memory-pressure-off 2>&1 | tee -a /tmp/viewer.log\n\
+    EXIT_CODE=${PIPESTATUS[0]}\n\
+    echo "$(date): FeelingSurf exited with code $EXIT_CODE. Restarting in 10 seconds..." >> /tmp/viewer-sessions.log\n\
+    sleep 10\n\
+    \n\
+    # Clear memory caches before restart\n\
+    sync && echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true\n\
+done &\n\
 \n\
 # Wait for viewer to initialize\n\
-sleep 5\n\
+sleep 10\n\
 \n\
 # Start web server on port 8000\n\
-echo "Web interface available on port 8000"\n\
-echo ""\n\
-echo "=== FeelingSurf Viewer Logs ==="\n\
-tail -f /tmp/viewer.log &\n\
+echo "=== Service Status ===\n\
+✅ Web interface: http://0.0.0.0:8000\n\
+✅ FeelingSurf Viewer: Running with auto-restart\n\
+✅ Virtual Display: Active (:99)\n\
+========================================="\n\
+\n\
+# Start simple HTTP server for status page\n\
 cd /app && python3 -m http.server 8000' > /app/start.sh && \
     chmod +x /app/start.sh
 
-# Set environment
+# Set environment variables for memory optimization
 ENV access_token="d6e659ba6b59c9866fba8ff01bc56e04"
 ENV DISPLAY=:99
+ENV FEELINGSURF_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --memory-pressure-off"
+
+# Set memory limits at container level (informational)
+ENV NODE_OPTIONS="--max-old-space-size=512"
+ENV UV_THREADPOOL_SIZE=1
 
 EXPOSE 8000
 
