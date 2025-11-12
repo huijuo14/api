@@ -92,18 +92,18 @@ cd /app\n\
 # Wait for viewer to initialize\n\
 sleep 5\n\
 \n\
-# Start web server on port 7860\n\
-echo "Web interface available on port 7860"\n\
+# Start web server on port 8000\n\
+echo "Web interface available on port 8000"\n\
 echo ""\n\
 echo "=== FeelingSurf Viewer Logs ==="\n\
 tail -f /tmp/viewer.log &\n\
-cd /app && python3 -m http.server 7860' > /app/start.sh && \
+cd /app && python3 -m http.server 8000' > /app/start.sh && \
     chmod +x /app/start.sh
 
 # Set environment
 ENV access_token="d6e659ba6b59c9866fba8ff01bc56e04"
 ENV DISPLAY=:99
 
-EXPOSE 7860
+EXPOSE 8000
 
 CMD ["/app/start.sh"]
