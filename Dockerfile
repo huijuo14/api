@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     curl \
     xvfb \
+    unzip \
     python3 \
     libnss3 \
     libatk1.0-0 \
